@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RAG(Retrieval-Augmented Generation)를 활용하여 음식점 요약문을 생성하는 LLM PoC 프로젝트입니다. Gemini 2.5 Pro와 Chroma 벡터 데이터베이스를 사용하여 3개 음식점 카테고리에 대해 고품질의 일관된 요약문을 생성합니다.
 
+### 시스템 구성
+
+1. **Knowledge Base 구축** (`shop_summary/knowledge_base/`)
+   - 카테고리별 소스 타입 정의 (15가지)
+   - LLM 지식 기반 소스 생성 (현재)
+   - 향후 실제 외부 데이터 수집으로 전환 예정
+
+2. **요약문 생성** (각 카테고리 디렉토리)
+   - Knowledge Base 검색 + 예시 기반 요약문 생성
+   - 3개 독립 RAG 파이프라인
+
 ## 아키텍처
 
 ### 3개의 독립적인 RAG 파이프라인
@@ -31,13 +42,23 @@ RAG(Retrieval-Augmented Generation)를 활용하여 음식점 요약문을 생�
 ### 벡터 데이터베이스 구조
 
 ```
-./chroma_db/
-├── fine_dining_examples (컬렉션)
-├── mid_price_examples (컬렉션)
-└── waiting_hotplace_examples (컬렉션)
+shop_summary/chroma_db/
+├── [요약문 예시 컬렉션]
+│   ├── fine_dining_examples
+│   ├── low_to_mid_price_dining_examples
+│   └── waiting_hotplace_examples
+│
+└── [원본 소스 컬렉션]
+    ├── fine_dining_sources
+    ├── low_to_mid_price_dining_sources
+    └── waiting_hotplace_sources
 ```
 
-**컬렉션을 분리한 이유**: 각 카테고리는 고유한 톤앤매너와 스타일을 가집니다. 격리를 통해 카테고리 간 오염을 방지하고 작성 일관성을 유지합니다.
+**컬렉션 분리 이유**:
+- **카테고리 격리**: 각 카테고리는 고유한 톤앤매너 유지
+- **소스 타입 분리**:
+  - `examples`: 생성된 요약문 예시 (자가 개선 루프용)
+  - `sources`: 원본 지식 소스 (미쉐린, 블로그 등)
 
 ## 핵심 기술 스택
 
@@ -89,6 +110,32 @@ pyenv local llm-poc  # .python-version 참고
 - `retrieve_similar_examples(query_text, collection, top_k=2)` - Chroma에서 유사 예시 검색
 - `format_rag_context(similar_examples)` - 검색된 예시를 LLM 프롬프트 형식으로 포맷
 - `store_successful_example(...)` - 검증된 요약문을 벡터 DB에 저장
+
+### Knowledge Base 구축 워크플로우 (`shop_summary/knowledge_base/`)
+
+#### source_pipeline.ipynb - 통합 소스 파이프라인
+
+3단계 파이프라인으로 구성:
+```
+Phase 1: Generator  → LLM 지식으로 소스 생성
+Phase 2: Validator  → 데이터 유효성 검증
+Phase 3: Indexer    → 벡터 DB 인덱싱
+```
+
+**카테고리별 소스 타입 (15가지)**:
+- **파인다이닝**: michelin_review, blueribbon_review, chef_interview, course_description, brand_philosophy
+- **웨이팅 핫플**: signature_menu, atmosphere, popularity, price_value, location_access
+- **중저가 예약**: menu_composition, value_proposition, dining_atmosphere, reservation_parking, chef_approach
+
+**⚠️ 현재 한계**:
+- LLM 내부 지식 기반 (진짜 RAG 아님)
+- 할루시네이션 위험 존재
+- 출처 검증 불가능
+
+**🎯 향후 계획**:
+- 네이버 블로그 API 통합
+- 미쉐린/블루리본 크롤링
+- 실제 외부 소스 기반으로 전환
 
 ### 출력 구조
 
@@ -149,6 +196,21 @@ RAG 시스템은 시간이 지남에 따라 학습합니다:
 - Chroma: 무료 (로컬 저장, 매장당 ~2KB)
 - 매장당 평균 비용: ~$0.0025
 
+### ⚠️ 현재 시스템의 한계 (2025-11-11 식별)
+
+**LLM 지식 기반 방식의 문제**:
+1. **순환 논리**: LLM이 생성한 내용을 다시 LLM에게 제공하는 구조
+2. **출처 불명**: 실제 외부 문서가 아닌 LLM 학습 데이터 기반
+3. **검증 불가**: URL이나 실제 출처가 없어 사실 확인 어려움
+4. **할루시네이션**: 잘못된 정보가 Knowledge Base에 저장되면 계속 참조됨
+
+**진짜 RAG 시스템으로의 전환 계획**:
+- Phase 1 (현재): LLM 지식 기반 Knowledge Base 구축
+- Phase 2 (1개월): 네이버 블로그 API 통합
+- Phase 3 (3개월): 미쉐린/블루리본/공식 웹사이트 크롤링 추가
+
+자세한 내용: `shop_summary/knowledge_base/IMPLEMENTATION_OPTIONS.md` 참고
+
 ## 일반적인 문제
 
 ### Chroma 컬렉션이 비어있음
@@ -181,10 +243,16 @@ cp -r ./chroma_db_backup_20250110 ./chroma_db
 
 ## 문서
 
-`shop_summary/` 내 주요 문서:
+### shop_summary/ 디렉토리
 - `RAG_IMPLEMENTATION.md` - 완전한 RAG 통합 가이드
 - `RAG_ARCHITECTURE_OVERVIEW.md` - 예시가 포함된 상세 아키텍처 설명
 - `VECTOR_DB_EMBEDDING_EXPLAINED.md` - 벡터 임베딩 개념
+
+### shop_summary/knowledge_base/ 디렉토리
+- `DATA_SOURCE_MAPPING.md` - 15가지 소스 타입별 실제 데이터 출처 매핑
+- `IMPLEMENTATION_OPTIONS.md` - Knowledge Base 구축 3가지 옵션 비교 (네이버 블로그 / 하이브리드 / LLM 지식)
+- `SCALABILITY_ANALYSIS.md` - 10,000개 매장 확장성 분석 및 인프라 요구사항
+- `source_pipeline.ipynb` - 통합 소스 파이프라인 (Generator → Validator → Indexer)
 
 ## 프로젝트 설정
 
