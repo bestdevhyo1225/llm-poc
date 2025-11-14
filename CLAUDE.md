@@ -9,7 +9,7 @@ RAG(Retrieval-Augmented Generation)를 활용하여 음식점 요약문을 생�
 ### 시스템 구성
 
 1. **Knowledge Base 구축** (`shop_summary/knowledge_base/`)
-   - 카테고리별 소스 타입 정의 (15가지)
+   - 카테고리별 소스 타입 정의 (14가지 총합)
    - LLM 지식 기반 소스 생성 (현재)
    - 향후 실제 외부 데이터 수집으로 전환 예정
 
@@ -19,6 +19,23 @@ RAG(Retrieval-Augmented Generation)를 활용하여 음식점 요약문을 생�
 
 ## 아키텍처
 
+### RAG 버전 선택 가이드
+
+각 카테고리에는 4가지 버전의 노트북이 있으며, 상황에 따라 선택합니다:
+
+| 버전 | 파일명 | 사용 시기 | 장점 | 단점 |
+|------|--------|-----------|------|------|
+| v1.0 | `main.ipynb` | 초기 테스트, RAG DB 없을 때 | 빠름, 단순 | 일관성 낮음 |
+| v3.0 | `main_rag.ipynb` | 예시 20개 이상 쌓였을 때 | 스타일 일관성 | 컨텍스트 부족 |
+| v4.0 | `main_rag_source.ipynb` | Knowledge Base 구축 완료 후 | 풍부한 정보 | 스타일 불안정 |
+| v5.0 | `main_rag_hybrid.ipynb` | 프로덕션 배포 | 최고 품질 | 비용/토큰 높음 |
+
+**권장 진행 순서**:
+1. `main.ipynb`로 첫 10~20개 매장 생성 → 예시 DB 구축
+2. `main_rag.ipynb`로 예시 기반 생성 시작 (스타일 학습)
+3. Knowledge Base 구축 후 `main_rag_source.ipynb` 테스트
+4. 최종적으로 `main_rag_hybrid.ipynb`로 전환
+
 ### 3개의 독립적인 RAG 파이프라인
 
 시스템은 톤앤매너 일관성을 유지하기 위해 카테고리별 독립 RAG 파이프라인을 사용합니다:
@@ -27,9 +44,11 @@ RAG(Retrieval-Augmented Generation)를 활용하여 음식점 요약문을 생�
 - **중저가 예약 매장**: `shop_summary/low_to_mid_price_dining/`
 - **웨이팅 핫플레이스**: `shop_summary/waiting_hotplace/`
 
-각 카테고리는 다음 2개 노트북을 포함합니다:
-- `main.ipynb` - RAG 없는 기본 버전
-- `main_rag.ipynb` - Chroma 벡터 DB를 활용한 RAG 강화 버전
+각 카테고리는 다음 4개 노트북을 포함합니다:
+- `main.ipynb` - RAG 없는 기본 버전 (v1.0)
+- `main_rag.ipynb` - 요약문 예시 기반 RAG (v3.0, Example-based)
+- `main_rag_source.ipynb` - 원본 소스 기반 RAG (v4.0, Source-based)
+- `main_rag_hybrid.ipynb` - 하이브리드 RAG (v5.0, 소스 + 예시)
 
 ### RAG 워크플로우
 
@@ -82,6 +101,18 @@ export GOOGLE_APPLICATION_CREDENTIALS="/home/ubuntu/keys/wad-dw-data-engineer.js
 pyenv local llm-poc  # .python-version 참고
 ```
 
+### 정보 수집 방법 (main.ipynb)
+
+**수동 수집 워크플로우**:
+1. 섹션 4의 `SHOPS` 리스트에 매장 기본 정보 입력 (shop_seq, shop_name)
+2. 섹션 5의 가이드를 참고하여 외부 소스 수집:
+   - 미쉐린 가이드: https://guide.michelin.com/kr/ko/restaurants
+   - 블루리본: https://www.bluer.co.kr
+   - 매장 공식 웹사이트
+   - 네이버 플레이스
+3. `COLLECTED_INFO` 딕셔너리에 매장명을 키로 정보 입력
+4. 각 소스 타입당 100~500자 권장 (총 400~2000자)
+
 ### 노트북 실행 방법
 
 각 RAG 노트북은 2가지 처리 모드를 지원합니다:
@@ -122,8 +153,8 @@ Phase 2: Validator  → 데이터 유효성 검증
 Phase 3: Indexer    → 벡터 DB 인덱싱
 ```
 
-**카테고리별 소스 타입 (15가지)**:
-- **파인다이닝**: michelin_review, blueribbon_review, chef_interview, course_description, brand_philosophy
+**카테고리별 소스 타입 (14가지)**:
+- **파인다이닝**: restaurant_review (매장 특징 및 평가), signature_menu (시그니처 메뉴), atmosphere (분위기), visit_tips (방문 팁)
 - **웨이팅 핫플**: signature_menu, atmosphere, popularity, price_value, location_access
 - **중저가 예약**: menu_composition, value_proposition, dining_atmosphere, reservation_parking, chef_approach
 
@@ -134,8 +165,14 @@ Phase 3: Indexer    → 벡터 DB 인덱싱
 
 **🎯 향후 계획**:
 - 네이버 블로그 API 통합
-- 미쉐린/블루리본 크롤링
+- 미쉐린/블루리본 크롤링 (기술적 제약으로 현재 제거됨)
 - 실제 외부 소스 기반으로 전환
+
+**⚠️ 자동 크롤링 제거 (2025-11-14)**:
+- 미쉐린 가이드 API: CORS 제한 (브라우저 전용)
+- 블루리본: JavaScript 렌더링 필수
+- Selenium: 환경 의존성 높음
+- **현재**: `main.ipynb`의 `COLLECTED_INFO`에 수동으로 정보 입력
 
 ### 출력 구조
 
@@ -226,9 +263,20 @@ filtered_results = [r for r in results if r.get('score', 0) >= 0.5]
 
 ### 검증 실패
 
+**코드 기반 검증 시스템** (섹션 7, LLM 호출 없음):
+
 검증 항목:
-- 구조: `title`과 정확히 3개의 `summaries`가 있어야 함
-- 길이: 각 요약문은 40-60자 권장 (<30 또는 >100일 경우 경고)
+- ✅ **필수 구조**: `title`, `summaries` 키 존재, 정확히 3개 문장
+- ✅ **길이**: 각 요약문 40-60자 권장, 제목 15-30자 권장
+- ✅ **예시 복사 체크**: 유사도 90% 이상이면 실패 (70% 이상은 경고)
+- ✅ **금지 키워드**: "최고의", "완벽한", "최상의" 등 과장 표현
+- ✅ **문장 간 중복**: 3개 문장이 70% 이상 유사하면 경고
+- ✅ **특수문자/이모지**: 이모지 사용 시 경고
+
+검증 결과 해석:
+- ✅ 통과: 모든 규칙 준수
+- ⚠️ 경고: 권장사항 위반 (사용 가능하지만 검토 권장)
+- ❌ 실패: 필수 규칙 위반 (수정 필요)
 
 ### 벡터 DB 백업
 
@@ -264,10 +312,10 @@ cp -r ./chroma_db_backup_20250110 ./chroma_db
 - **응답 형식**: JSON
 
 📂 파인다이닝/스시오마카세 (4가지):
-   • 매장 특징 및 평가
-   • 시그니처 메뉴 설명
-   • 분위기
-   • 방문 팁
+   • restaurant_review (매장 특징 및 평가)
+   • signature_menu (시그니처 메뉴 설명)
+   • atmosphere (분위기)
+   • visit_tips (방문 팁)
 
 📂 웨이팅 핫플레이스 (5가지):
    • 시그니처 메뉴 (signature_menu)
